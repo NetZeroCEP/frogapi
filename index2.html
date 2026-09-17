@@ -1,0 +1,157 @@
+<h2>辨識青蛙種類聲音</h2>
+
+<button id="startBtn">開始錄音</button>
+<button id="stopBtn" disabled>停止錄音</button>
+
+<br><br>
+
+<audio id="audioPlayback" controls></audio>
+
+<div id="resultBox" style="margin-top: 20px;">
+    <h3>辨識結果</h3>
+    <p hidden> <strong>檔案名稱：</strong> <span id="filename"></span> </p>
+    <p hidden> <strong>訊息：</strong> <span id="message"></span> </p>
+    <h2 id="result"></h2>
+</div>
+
+<script>
+    let mediaRecorder;
+    let audioChunks = [];
+
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const audioPlayback = document.getElementById('audioPlayback');
+
+    const filenameElement = document.getElementById('filename');
+    const messageElement = document.getElementById('message');
+    const resultElement = document.getElementById('result');
+    let URL_1 = ""
+    window.onload = function () {
+        const url = new URL(
+            "https://raw.githubusercontent.com/NetZeroCEP/frogapi/refs/heads/main/main.txt"
+        );
+
+        url.searchParams.set("t", Date.now());
+
+        fetch(url, {
+            cache: "no-store"
+        })
+            .then(res => res.text())
+            .then(data => {
+                console.log(data);
+                URL_1 = data
+            })
+            .catch(error => {
+                console.error("發生錯誤：", error);
+            });
+    };
+
+
+    // 開始錄音
+    startBtn.onclick = async () => {
+        resultElement.textContent = '';
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: true
+            });
+
+            // 使用瀏覽器支援的錄音格式
+            let mimeType = 'audio/webm';
+
+            if (!MediaRecorder.isTypeSupported('audio/webm')) {
+                mimeType = 'audio/ogg';
+            }
+
+            mediaRecorder = new MediaRecorder(stream, {
+                mimeType: mimeType
+            });
+
+            audioChunks = [];
+
+            // 收集錄音資料
+            mediaRecorder.ondataavailable = event => {
+                if (event.data.size > 0) {
+                    audioChunks.push(event.data);
+                }
+            };
+
+            // 錄音停止
+            mediaRecorder.onstop = async () => {
+
+                const audioBlob = new Blob(audioChunks, {
+                    type: mimeType
+                });
+
+                // 播放錄音
+                const audioUrl = URL.createObjectURL(audioBlob);
+                audioPlayback.src = audioUrl;
+
+                // 建立 FormData
+                const formData = new FormData();
+
+                formData.append(
+                    'audio',
+                    audioBlob,
+                    'recording.webm'
+                );
+
+                try {
+                    // POST 到 Flask
+                    const response = await fetch(`${URL_1}/upload`, {
+                        method: 'POST',
+                        body: formData,
+                        headers:{"ngrok-skip-browser-warning": "69420"}
+                    });
+
+                    const result = await response.json();
+
+                    console.log(result);
+
+                    filenameElement.textContent = result.filename || '';
+                    messageElement.textContent = result.message || '';
+                    resultElement.textContent = result.result || '';
+
+                } catch (error) {
+                    console.error('上傳錯誤：', error);
+                    alert('無法連線到 Flask');
+                    filenameElement.textContent = '';
+                    messageElement.textContent = '無法連線到 Flask';
+                    resultElement.textContent = '錯誤';
+                }
+
+                // 關閉麥克風
+                mediaRecorder.stream.getTracks().forEach(track => {
+                    track.stop();
+                });
+
+                audioChunks = [];
+            };
+
+            // 開始錄音
+            mediaRecorder.start();
+
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+
+            console.log('開始錄音');
+
+        } catch (err) {
+            console.error(err);
+            alert('無法存取麥克風，請確認權限已開啟！');
+        }
+    };
+
+
+    // 停止錄音
+    stopBtn.onclick = () => {
+
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+        }
+
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+
+        console.log('停止錄音');
+    };
+</script>
